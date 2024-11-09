@@ -1,0 +1,40 @@
+{
+  "project_info": {
+    "project_number": "504737809220",
+    "firebase_url": "https://fileshare-37ebc-default-rtdb.firebaseio.com",
+    "project_id": "fileshare-37ebc",
+    "storage_bucket": "fileshare-37ebc.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:504737809220:android:ea6a5988da072ce5564d11",
+        "android_client_info": {
+          "package_name": "com.varshith.freeshare"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "504737809220-3o0ardoa9f4lk0c4f78b56h5oohuoaho.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4CeEHMnRJ92FlYXXtv7tXQVWpWWsT5wQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "504737809220-3o0ardoa9f4lk0c4f78b56h5oohuoaho.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
