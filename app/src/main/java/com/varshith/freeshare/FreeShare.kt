@@ -73,7 +73,7 @@ fun FreeShareApp(modifier: Modifier = Modifier) {
     val focusManager = LocalFocusManager.current
     val context = LocalContext.current
     val downloadManager = remember { DownloadManagerHelper(context) }
-
+    var transferProgress by remember { mutableStateOf(TransferProgress()) }
     val coroutineScope = rememberCoroutineScope()
     val firebaseManager = remember { FirebaseManager() }
     val scope = rememberCoroutineScope()
@@ -89,6 +89,39 @@ fun FreeShareApp(modifier: Modifier = Modifier) {
                     actionLabel = "Settings"
                 )
             }
+        }
+    }
+
+    @Composable
+    fun TransferProgressIndicator(progress: TransferProgress) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(16.dp)
+        ) {
+            LinearProgressIndicator(
+                progress = progress.progress / 100f,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(8.dp)
+                    .clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.surfaceVariant
+            )
+            Text(
+                text = "${progress.progress.toInt()}%",
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(top = 8.dp),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Text(
+                text = when(progress.type) {
+                    TransferType.UPLOAD -> "Uploading..."
+                    TransferType.DOWNLOAD -> "Downloading..."
+                    TransferType.NONE -> ""
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 
@@ -219,21 +252,29 @@ fun FreeShareApp(modifier: Modifier = Modifier) {
                                     Button(
                                         onClick = {
                                             coroutineScope.launch {
-                                                showProgress = true
-                                                Log.d("SelectedFileName",selectedFileName.toString())
+                                                transferProgress = TransferProgress(
+                                                    isTransferring = true,
+                                                    progress = 0f,
+                                                    type = TransferType.UPLOAD
+                                                )
                                                 selectedFileUri?.let { uri ->
                                                     selectedFileName?.let { fileName ->
-                                                        Log.d("filename" , fileName)
                                                         try {
-                                                            uniqueId = firebaseManager.uploadFile(uri, fileName)
-                                                                .toString()
+                                                            uniqueId = firebaseManager.uploadFile(
+                                                                uri,
+                                                                fileName,
+                                                                onProgressUpdate = { progress ->
+                                                                    transferProgress = transferProgress.copy(progress = progress)
+                                                                }
+                                                            ).toString()
                                                             showUniqueId = true
                                                         } catch (e: Exception) {
                                                             // Handle error
+                                                        } finally {
+                                                            transferProgress = TransferProgress()
                                                         }
                                                     }
                                                 }
-                                                showProgress = false
                                             }
                                         },
                                         modifier = Modifier.fillMaxWidth(),
@@ -272,17 +313,11 @@ fun FreeShareApp(modifier: Modifier = Modifier) {
                         }
 
                         AnimatedVisibility(
-                            visible = showProgress,
+                            visible = transferProgress.isTransferring,
                             enter = fadeIn() + expandVertically(),
                             exit = fadeOut() + shrinkVertically()
                         ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier
-                                    .size(64.dp)
-                                    .padding(16.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                strokeWidth = 6.dp
-                            )
+                            TransferProgressIndicator(transferProgress)
                         }
 
                         AnimatedVisibility(
@@ -421,7 +456,9 @@ fun FreeShareApp(modifier: Modifier = Modifier) {
                                         val fileName = firebaseManager.getFileName(enteredId.toInt())
 
                                         if (url != null && fileName != null) {
-                                            downloadManager.downloadFile(url, fileName)
+                                            downloadManager.downloadFile(url, fileName) { progress ->
+                                                transferProgress = transferProgress.copy(progress = progress)
+                                            }
                                         } else {
                                             withContext(Dispatchers.Main) {
                                                 Toast.makeText(

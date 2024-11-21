@@ -4,6 +4,8 @@ import android.app.DownloadManager
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
+import android.os.Handler
+import android.os.Looper
 import android.webkit.CookieManager
 import android.webkit.MimeTypeMap
 import android.widget.Toast
@@ -13,7 +15,7 @@ import kotlinx.coroutines.withContext
 class DownloadManagerHelper(private val context: Context) {
     private val downloadManager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
 
-    suspend fun downloadFile(url: String, fileName: String) {
+    suspend fun downloadFile(url: String, fileName: String, onProgressUpdate: (Float) -> Unit) {
         try {
             withContext(Dispatchers.IO) {
                 // Create download request
@@ -30,8 +32,11 @@ class DownloadManagerHelper(private val context: Context) {
                     addRequestHeader("User-Agent", "Mozilla/5.0")
                 }
 
-                // Start download
-                downloadManager.enqueue(request)
+                // Start download and get download ID
+                val downloadId = downloadManager.enqueue(request)
+
+                // Monitor download progress
+                monitorDownloadProgress(downloadId, onProgressUpdate)
             }
 
             // Show toast on main thread
@@ -44,6 +49,42 @@ class DownloadManagerHelper(private val context: Context) {
             }
             e.printStackTrace()
         }
+    }
+
+    private fun monitorDownloadProgress(downloadId: Long, onProgressUpdate: (Float) -> Unit) {
+        val query = DownloadManager.Query().setFilterById(downloadId)
+
+        Thread {
+            var isDownloading = true
+            while (isDownloading) {
+                val cursor = downloadManager.query(query)
+                if (cursor.moveToFirst()) {
+                    val bytesDownloaded = cursor.getLong(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_BYTES_DOWNLOADED_SO_FAR)
+                    )
+                    val bytesTotal = cursor.getLong(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_TOTAL_SIZE_BYTES)
+                    )
+
+                    if (bytesTotal > 0) {
+                        val progress = (bytesDownloaded * 100f / bytesTotal)
+                        Handler(Looper.getMainLooper()).post {
+                            onProgressUpdate(progress)
+                        }
+                    }
+
+                    val status = cursor.getInt(
+                        cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS)
+                    )
+                    if (status == DownloadManager.STATUS_SUCCESSFUL ||
+                        status == DownloadManager.STATUS_FAILED) {
+                        isDownloading = false
+                    }
+                }
+                cursor.close()
+                Thread.sleep(100) // Check progress every 100ms
+            }
+        }.start()
     }
 
     private fun getMimeType(url: String): String {

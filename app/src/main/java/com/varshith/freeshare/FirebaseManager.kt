@@ -10,9 +10,13 @@ import com.google.firebase.database.DatabaseError
 import com.google.firebase.database.ValueEventListener
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
+import com.google.firebase.storage.StorageReference
 import com.google.firebase.storage.ktx.storage
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.tasks.await
 import java.util.UUID
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import kotlin.math.log
 import kotlin.random.Random
 
@@ -20,17 +24,20 @@ class FirebaseManager {
     private val storage = Firebase.storage
     private val database = Firebase.database.reference
 
-    suspend fun uploadFile(fileUri: Uri, fileName: String): Int {
-        Log.d("FileName",fileName)
+    suspend fun uploadFile(
+        fileUri: Uri,
+        fileName: String,
+        onProgressUpdate: (Float) -> Unit
+    ): Int {
+        Log.d("FileName", fileName)
         val uniqueId = generateUniqueId()
         val fileExtension = getFileExtension(fileName)
         val storageFileName = "$uniqueId.$fileExtension"
         val storageRef = storage.reference.child("files/$storageFileName")
 
         return try {
-            // Upload file to Firebase Storage
-            storageRef.putFile(fileUri).await()
-            val downloadUrl = storageRef.downloadUrl.await().toString()
+            // Upload file to Firebase Storage with progress tracking
+            val downloadUrl = uploadFileWithProgress(storageRef, fileUri, onProgressUpdate)
 
             // Save metadata to Realtime Database
             val fileMetadata = hashMapOf(
@@ -38,7 +45,10 @@ class FirebaseManager {
                 "url" to downloadUrl,
                 "unique" to uniqueId
             )
-            database.child("fileData").child(UUID.randomUUID().toString()).setValue(fileMetadata).await()
+            database.child("fileData")
+                .child(UUID.randomUUID().toString())
+                .setValue(fileMetadata)
+                .await()
 
             uniqueId
         } catch (e: Exception) {
@@ -46,6 +56,34 @@ class FirebaseManager {
         }
     }
 
+    private suspend fun uploadFileWithProgress(
+        storageRef: StorageReference,
+        fileUri: Uri,
+        onProgressUpdate: (Float) -> Unit
+    ): String = suspendCancellableCoroutine { continuation ->
+        val uploadTask = storageRef.putFile(fileUri)
+
+        uploadTask.addOnProgressListener { taskSnapshot ->
+            val progress = (100.0 * taskSnapshot.bytesTransferred / taskSnapshot.totalByteCount)
+            onProgressUpdate(progress.toFloat())
+        }.addOnSuccessListener {
+            // Get download URL after successful upload
+            storageRef.downloadUrl
+                .addOnSuccessListener { uri ->
+                    continuation.resume(uri.toString())
+                }
+                .addOnFailureListener { exception ->
+                    continuation.resumeWithException(exception)
+                }
+        }.addOnFailureListener { exception ->
+            continuation.resumeWithException(exception)
+        }
+
+        // Handle cancellation
+        continuation.invokeOnCancellation {
+            uploadTask.cancel()
+        }
+    }
     private suspend fun generateUniqueId(): Int {
         var randomNumber: Int
         do {
